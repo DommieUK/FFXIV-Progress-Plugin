@@ -5,13 +5,13 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 
     <!-- Manifest fields (see https://github.com/goatcorp/DalamudPackager/blob/827d88dc/DalamudPackager/DalamudPackager.cs#L420) -->
-    <Author>your name here</Author>
+    <Author>DommieUK</Author>
     <Name>FFXIV Progress Tracker</Name>
     <Punchline>Tracks your completed content and syncs a snapshot to your own website.</Punchline>
     <Description>Tracks which duties, Main Scenario Quests, and achievements the current character has completed
 using the game's own tracked state, and periodically syncs a JSON snapshot to a self-hosted HTTPS
 endpoint so it can be displayed on an external website.</Description>
-    <RepoUrl>https://github.com/example/FFXIVProgressPlugin</RepoUrl>
+    <RepoUrl>https://github.com/DommieUK/FFXIV-Progress-Plugin</RepoUrl>
     <Tags>tracker;progress;sync;completion</Tags>
   </PropertyGroup>
 </Project>
