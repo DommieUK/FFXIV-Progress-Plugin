@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="FFXIVProgressPlugin/FFXIVProgressPlugin.csproj">
+    <Platform Project="x64" />
+  </Project>
+</Solution>
