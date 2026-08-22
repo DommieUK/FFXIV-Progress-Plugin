@@ -7,8 +7,13 @@ namespace FFXIVProgressPlugin.Trackers;
 
 /// <summary>
 /// Tracks Achievement completion via Dalamud's IUnlockState.IsAchievementComplete, which wraps the
-/// game's own achievement unlock state. The Achievement sheet doesn't expose an expansion, so that
-/// field is left empty rather than guessed.
+/// game's own achievement unlock state.
+///
+/// Expansion is left empty: the Achievement sheet has no version/patch field, and neither does
+/// AchievementCategory or AchievementKind (its only related sheets) - AchievementKind is a thematic
+/// grouping like "Battle" or "Character", not a release version. There's no clean way to derive which
+/// expansion an achievement belongs to from data the game itself exposes, so this is left blank rather
+/// than guessed.
 /// </summary>
 public sealed class AchievementTracker : IContentTracker
 {

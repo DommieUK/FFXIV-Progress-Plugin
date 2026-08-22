@@ -2,27 +2,42 @@ using System;
 using System.Collections.Generic;
 using Dalamud.Plugin.Services;
 using Lumina.Excel.Sheets;
-using NativeContentsNote = FFXIVClientStructs.FFXIV.Client.Game.UI.ContentsNote;
+using NativeUIState = FFXIVClientStructs.FFXIV.Client.Game.UI.UIState;
 
 namespace FFXIVProgressPlugin.Trackers;
 
 /// <summary>
 /// Tracks completion of instanced duties (Dungeons, Trials, Raids, Alliance Raids, Variant &amp; Criterion
-/// Dungeons, ...) that appear in the Duty Finder.
+/// Dungeons, ...) that appear in the Duty Finder (or, for Variant &amp; Criterion dungeons, the separate
+/// V&amp;C Dungeon Finder).
 ///
-/// The game does not expose a simple "has this ContentFinderCondition been cleared" flag through
-/// Dalamud or FFXIVClientStructs. What it does expose is the "Content Compendium" completion bitmask
-/// (FFXIVClientStructs' ContentsNote, backing the in-game Content Compendium / duty journal), which is
-/// keyed by its own ContentsNote sheet rather than by ContentFinderCondition. Both sheets use the same
-/// human-readable duty name, so this tracker cross-references them by name at runtime (pulled live from
-/// Lumina every sync - never a hardcoded id table) to resolve completion.
+/// The game does not expose a simple "has this ContentFinderCondition been cleared" flag directly on the
+/// ContentFinderCondition sheet. What it does expose is FFXIVClientStructs' UIState.IsInstanceContentCompleted,
+/// a native function keyed by InstanceContent row id (a separate sheet from ContentFinderCondition). Most
+/// duties link to their InstanceContent row via ContentFinderCondition.Content when ContentLinkType == 1 -
+/// this tracker resolves that link at runtime (pulled live from Lumina every sync - never a hardcoded id
+/// table) and asks the client directly whether that instance content has been completed.
 ///
-/// Content without a Content Compendium entry (e.g. some Guildhests) will report as not completed since
-/// no clear signal is available; this is a known limitation of the data the game exposes.
+/// An earlier version of this tracker instead cross-referenced the "Content Compendium" ContentsNote sheet
+/// by duty name. That was a dead end: ContentsNote isn't a per-duty completion list at all - it's a much
+/// smaller (~100 row) set of unrelated meta-challenges (e.g. "Dungeon Master", "Feeling Lucky"), so a name
+/// match against it never succeeds for an actual dungeon/trial/raid name. UIState.IsInstanceContentCompleted
+/// is the correct signal.
+///
+/// A handful of duties don't use ContentLinkType == 1 (e.g. some Gold Saucer or party-content-linked
+/// entries) and have no InstanceContent row to resolve; those report as not completed since no clear
+/// completion signal is available for them. This is a known, narrow limitation of the data the game exposes,
+/// not a bug - it should never be excluded from the total.
 /// </summary>
 public sealed unsafe class DutyContentTracker : IContentTracker
 {
-    private readonly Func<string, bool> contentTypeMatches;
+    private static readonly HashSet<string> SpotCheckNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Sastasha",
+        "the Tam-Tara Deepcroft",
+    };
+
+    private readonly Func<ContentFinderCondition, bool> matchesCategory;
 
     public string CategoryId { get; }
 
@@ -30,12 +45,12 @@ public sealed unsafe class DutyContentTracker : IContentTracker
 
     public bool DefaultEnabled { get; }
 
-    public DutyContentTracker(string categoryId, string displayName, bool defaultEnabled, Func<string, bool> contentTypeMatches)
+    public DutyContentTracker(string categoryId, string displayName, bool defaultEnabled, Func<ContentFinderCondition, bool> matchesCategory)
     {
         CategoryId = categoryId;
         DisplayName = displayName;
         DefaultEnabled = defaultEnabled;
-        this.contentTypeMatches = contentTypeMatches;
+        this.matchesCategory = matchesCategory;
     }
 
     public IReadOnlyList<TrackedItem> BuildItems(IDataManager dataManager, IUnlockState unlockState, IPluginLog log)
@@ -44,69 +59,61 @@ public sealed unsafe class DutyContentTracker : IContentTracker
 
         try
         {
-            NativeContentsNote* contentsNote;
-            try
-            {
-                contentsNote = NativeContentsNote.Instance();
-            }
-            catch (Exception ex)
-            {
-                log.Debug(ex, "[{Category}] Failed to access ContentsNote instance", CategoryId);
-                return items;
-            }
-
-            if (contentsNote == null || contentsNote->State != NativeContentsNote.ContentsNoteState.Loaded)
-            {
-                log.Debug("[{Category}] Content Compendium data isn't loaded yet; skipping this sync", CategoryId);
-                return items;
-            }
-
-            var noteSheet = dataManager.GetExcelSheet<ContentsNote>();
-            if (noteSheet == null)
-                return items;
-
-            var noteRowIdByName = new Dictionary<string, uint>();
-            foreach (var note in noteSheet)
-            {
-                try
-                {
-                    var name = note.Name.ExtractText();
-                    if (string.IsNullOrWhiteSpace(name) || noteRowIdByName.ContainsKey(name))
-                        continue;
-                    noteRowIdByName[name] = note.RowId;
-                }
-                catch (Exception ex)
-                {
-                    log.Debug(ex, "[{Category}] Skipped a ContentsNote row due to an error", CategoryId);
-                }
-            }
-
             var cfcSheet = dataManager.GetExcelSheet<ContentFinderCondition>();
             if (cfcSheet == null)
+            {
+                log.Warning("[{Category}] ContentFinderCondition sheet was unavailable from Lumina", CategoryId);
                 return items;
+            }
+
+            var cfcRowCount = 0;
+            var categoryMatchCount = 0;
+            var resolvedCount = 0;
 
             foreach (var cfc in cfcSheet)
             {
+                cfcRowCount++;
+
                 try
                 {
-                    if (!cfc.IsInDutyFinder)
-                        continue;
-
                     var name = cfc.Name.ExtractText();
                     if (string.IsNullOrWhiteSpace(name))
                         continue;
 
-                    var typeName = cfc.ContentType.IsValid ? cfc.ContentType.Value.Name.ExtractText() : string.Empty;
-                    if (!contentTypeMatches(typeName))
+                    if (!matchesCategory(cfc))
                         continue;
+
+                    categoryMatchCount++;
 
                     var expansion = cfc.RequiredExVersion.IsValid
                         ? cfc.RequiredExVersion.Value.Name.ExtractText()
                         : string.Empty;
                     var level = (int)cfc.ClassJobLevelRequired;
 
-                    var completed = noteRowIdByName.TryGetValue(name, out var noteRowId)
-                        && contentsNote->IsContentNoteComplete((int)noteRowId);
+                    // ContentLinkType == 1 means Content resolves to an InstanceContent row, whose id is
+                    // what UIState.IsInstanceContentCompleted expects. Other link types (party content,
+                    // Gold Saucer content, ...) have no equivalent native completion check exposed.
+                    var hasSignal = cfc.ContentLinkType == 1;
+                    var completed = false;
+                    if (hasSignal)
+                    {
+                        var instanceContentId = cfc.Content.RowId;
+                        completed = NativeUIState.IsInstanceContentCompleted(instanceContentId);
+                        resolvedCount++;
+
+                        if (SpotCheckNames.Contains(name))
+                        {
+                            log.Information(
+                                "[{Category}] Spot check '{Name}': ContentFinderCondition.RowId={CfcRowId}, InstanceContent.RowId={InstanceContentId}, Completed={Completed}",
+                                CategoryId, name, cfc.RowId, instanceContentId, completed);
+                        }
+                    }
+                    else if (SpotCheckNames.Contains(name))
+                    {
+                        log.Information(
+                            "[{Category}] Spot check '{Name}': ContentFinderCondition.RowId={CfcRowId}, ContentLinkType={ContentLinkType} has no InstanceContent link - no completion signal available",
+                            CategoryId, name, cfc.RowId, cfc.ContentLinkType);
+                    }
 
                     items.Add(new TrackedItem(cfc.RowId, name, CategoryId, completed, expansion, level));
                 }
@@ -115,6 +122,10 @@ public sealed unsafe class DutyContentTracker : IContentTracker
                     log.Debug(ex, "[{Category}] Skipped a ContentFinderCondition row due to an error", CategoryId);
                 }
             }
+
+            log.Information(
+                "[{Category}] ContentFinderCondition rows enumerated: {Total}, matched this category: {Matched}, resolved to an InstanceContent completion signal: {Resolved}",
+                CategoryId, cfcRowCount, categoryMatchCount, resolvedCount);
         }
         catch (Exception ex)
         {
