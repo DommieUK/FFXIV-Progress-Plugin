@@ -167,7 +167,10 @@ public sealed class ContentTrackerRegistry
         if (uiState == null)
             return;
 
-        if (!uiState->TitleList.DataRequested)
-            uiState->TitleList.RequestTitleList();
+        // Deliberately re-issued every sync while DataReceived is still false, rather than gated on
+        // DataRequested: the game sets DataRequested as soon as the request goes out, but if that first
+        // request never actually completes (e.g. it fired before the character was fully logged in),
+        // DataReceived stays false forever and a one-shot request never gets retried.
+        uiState->TitleList.RequestTitleList();
     }
 }

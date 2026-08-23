@@ -4,7 +4,7 @@
     "Name": "FFXIV Progress Tracker",
     "Description": "Tracks which duties, Main Scenario Quests, and achievements the current character has completed using the game's own tracked state, and periodically syncs a JSON snapshot to a self-hosted HTTPS endpoint so it can be displayed on an external website.",
     "InternalName": "FFXIVProgressPlugin",
-    "AssemblyVersion": "0.1.4.0",
+    "AssemblyVersion": "0.1.5.0",
     "RepoUrl": "https://github.com/DommieUK/FFXIV-Progress-Plugin",
     "ApplicableVersion": "any",
     "DalamudApiLevel": 15,
