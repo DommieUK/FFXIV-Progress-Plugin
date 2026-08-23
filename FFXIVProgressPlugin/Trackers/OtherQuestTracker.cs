@@ -6,9 +6,9 @@ using Lumina.Excel.Sheets;
 namespace FFXIVProgressPlugin.Trackers;
 
 /// <summary>
-/// Tracks every quest that isn't a Main Scenario Quest (see <see cref="QuestCategorization"/> for exactly
-/// what that excludes). This is the largest quest category by far - expect several thousand items,
-/// similar in scale to Achievements.
+/// Tracks every quest that isn't a Main Scenario Quest or a Feature Quest (see
+/// <see cref="QuestCategorization"/> for exactly what those exclude). This is the largest quest category
+/// by far - expect several thousand items, similar in scale to Achievements.
 /// </summary>
 public sealed class OtherQuestTracker : IContentTracker
 {
@@ -28,6 +28,8 @@ public sealed class OtherQuestTracker : IContentTracker
             if (sheet == null)
                 return items;
 
+            var dutyUnlockQuestIds = QuestCategorization.BuildDutyUnlockQuestIds(dataManager, log, CategoryId);
+
             foreach (var quest in sheet)
             {
                 try
@@ -37,6 +39,9 @@ public sealed class OtherQuestTracker : IContentTracker
                         continue;
 
                     if (QuestCategorization.IsMainScenarioQuest(quest))
+                        continue;
+
+                    if (QuestCategorization.IsFeatureQuest(quest, dutyUnlockQuestIds))
                         continue;
 
                     var expansion = quest.Expansion.IsValid ? quest.Expansion.Value.Name.ExtractText() : string.Empty;
@@ -51,6 +56,8 @@ public sealed class OtherQuestTracker : IContentTracker
                     log.Debug(ex, "[{Category}] Skipped a Quest row due to an error", CategoryId);
                 }
             }
+
+            log.Information("[{Category}] Quest rows matched: {Total}", CategoryId, items.Count);
         }
         catch (Exception ex)
         {

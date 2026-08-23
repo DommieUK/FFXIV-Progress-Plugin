@@ -60,6 +60,8 @@ public sealed class ContentTrackerRegistry
 
             new MainScenarioQuestTracker(),
 
+            new FeatureQuestTracker(),
+
             new OtherQuestTracker(),
 
             new AchievementTracker(),

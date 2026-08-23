@@ -6,20 +6,24 @@ using Lumina.Excel.Sheets;
 namespace FFXIVProgressPlugin.Trackers;
 
 /// <summary>
-/// Tracks completion of Main Scenario Quests, resolved via the Quest sheet's journal section
-/// (Quest -&gt; JournalGenre -&gt; JournalCategory -&gt; JournalSection, matched against the "Main Scenario"
-/// section name pulled live from Lumina) and Dalamud's IUnlockState.IsQuestCompleted.
+/// Tracks non-Main-Scenario quests that the game's own data marks as belonging to a "feature" category
+/// (job/class quests, beast tribes, Chronicles of a New Era, Grand Company, Records of Unusual Endeavors,
+/// Special Quests) or that unlock a job or a duty. See <see cref="QuestCategorization"/> for exactly what
+/// this covers and why - it deliberately excludes generic system unlocks (Aether Currents, aetherytes,
+/// Market Board, Chocobo, ...) that have no real sheet flag distinguishing them from ordinary side quests.
 /// </summary>
-public sealed class MainScenarioQuestTracker : IContentTracker
+public sealed class FeatureQuestTracker : IContentTracker
 {
     private static readonly HashSet<string> SpotCheckNames = new(StringComparer.OrdinalIgnoreCase)
     {
+        "Hallo Halatali",
+        "The Way of the Samurai",
         "The Company You Keep",
     };
 
-    public string CategoryId => "MainScenarioQuests";
+    public string CategoryId => "FeatureQuests";
 
-    public string DisplayName => "Main Scenario Quests";
+    public string DisplayName => "Feature Quests";
 
     public bool DefaultEnabled => true;
 
@@ -33,6 +37,8 @@ public sealed class MainScenarioQuestTracker : IContentTracker
             if (sheet == null)
                 return items;
 
+            var dutyUnlockQuestIds = QuestCategorization.BuildDutyUnlockQuestIds(dataManager, log, CategoryId);
+
             foreach (var quest in sheet)
             {
                 try
@@ -41,7 +47,23 @@ public sealed class MainScenarioQuestTracker : IContentTracker
                     if (string.IsNullOrWhiteSpace(name))
                         continue;
 
-                    if (!QuestCategorization.IsMainScenarioQuest(quest))
+                    if (QuestCategorization.IsMainScenarioQuest(quest))
+                    {
+                        // "The Company You Keep" (Grand Company enrollment) is a spot check the project
+                        // expected to land here, but the game's own data files it as genuine Main
+                        // Scenario (Id prefix "Man...", Section "Main Scenario...") - logged here so that
+                        // discrepancy is visible in every sync, not just the one-off investigation.
+                        if (SpotCheckNames.Contains(name))
+                        {
+                            log.Information(
+                                "[{Category}] Spot check '{Name}': RowId={RowId} is Main Scenario per the game's own data, not a Feature Quest - excluded here",
+                                CategoryId, name, quest.RowId);
+                        }
+
+                        continue;
+                    }
+
+                    if (!QuestCategorization.IsFeatureQuest(quest, dutyUnlockQuestIds))
                         continue;
 
                     var expansion = quest.Expansion.IsValid ? quest.Expansion.Value.Name.ExtractText() : string.Empty;
