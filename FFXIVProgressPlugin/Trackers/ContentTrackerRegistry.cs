@@ -60,6 +60,10 @@ public sealed class ContentTrackerRegistry
 
             new MainScenarioQuestTracker(),
 
+            new UnlockQuestTracker(),
+
+            new SideQuestTracker(),
+
             new AchievementTracker(),
 
             // Mount sheet has no expansion/patch field (checked MountTransient too - description text

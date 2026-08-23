@@ -6,15 +6,15 @@ using Lumina.Excel.Sheets;
 namespace FFXIVProgressPlugin.Trackers;
 
 /// <summary>
-/// Tracks completion of Main Scenario Quests, resolved via the Quest sheet's journal section
-/// (Quest -&gt; JournalGenre -&gt; JournalCategory -&gt; JournalSection, matched against the "Main Scenario"
-/// section name pulled live from Lumina) and Dalamud's IUnlockState.IsQuestCompleted.
+/// Tracks every non-Main-Scenario quest that doesn't unlock a job or a duty (see
+/// <see cref="QuestCategorization"/> for exactly what "unlocks" covers and why). This is the largest
+/// quest category by far - expect several thousand items, similar in scale to Achievements.
 /// </summary>
-public sealed class MainScenarioQuestTracker : IContentTracker
+public sealed class SideQuestTracker : IContentTracker
 {
-    public string CategoryId => "MainScenarioQuests";
+    public string CategoryId => "SideQuests";
 
-    public string DisplayName => "Main Scenario Quests";
+    public string DisplayName => "Side Quests";
 
     public bool DefaultEnabled => true;
 
@@ -28,6 +28,8 @@ public sealed class MainScenarioQuestTracker : IContentTracker
             if (sheet == null)
                 return items;
 
+            var dutyUnlockQuestIds = QuestCategorization.BuildDutyUnlockQuestIds(dataManager, log, CategoryId);
+
             foreach (var quest in sheet)
             {
                 try
@@ -36,7 +38,10 @@ public sealed class MainScenarioQuestTracker : IContentTracker
                     if (string.IsNullOrWhiteSpace(name))
                         continue;
 
-                    if (!QuestCategorization.IsMainScenarioQuest(quest))
+                    if (QuestCategorization.IsMainScenarioQuest(quest))
+                        continue;
+
+                    if (QuestCategorization.UnlocksSomething(quest, dutyUnlockQuestIds))
                         continue;
 
                     var expansion = quest.Expansion.IsValid ? quest.Expansion.Value.Name.ExtractText() : string.Empty;
@@ -51,6 +56,8 @@ public sealed class MainScenarioQuestTracker : IContentTracker
                     log.Debug(ex, "[{Category}] Skipped a Quest row due to an error", CategoryId);
                 }
             }
+
+            log.Information("[{Category}] Total: {Total}", CategoryId, items.Count);
         }
         catch (Exception ex)
         {
