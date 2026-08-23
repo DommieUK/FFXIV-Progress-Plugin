@@ -48,14 +48,21 @@ public static class QuestCategorization
         return sectionName.Contains("Main Scenario", StringComparison.OrdinalIgnoreCase);
     }
 
-    public static bool UnlocksJob(Quest quest) => quest.ClassJobUnlock.IsValid;
+    // RowRef<T>.IsValid only checks that the target sheet contains RowId - it does NOT treat 0 as "unset".
+    // ClassJob row 0 ("Adventurer") genuinely exists, so an unset ClassJobUnlock (raw value 0) reads back
+    // as "valid" unless RowId is checked explicitly. Same defensive check applied to every RowRef below.
+    public static bool UnlocksJob(Quest quest) => quest.ClassJobUnlock.RowId != 0 && quest.ClassJobUnlock.IsValid;
 
     public static bool UnlocksDuty(Quest quest, HashSet<uint> dutyUnlockQuestIds)
     {
         if (dutyUnlockQuestIds.Contains(quest.RowId))
             return true;
 
-        return quest.InstanceContentUnlock.IsValid && quest.InstanceContentUnlock.Value.ContentFinderCondition.IsValid;
+        if (quest.InstanceContentUnlock.RowId == 0 || !quest.InstanceContentUnlock.IsValid)
+            return false;
+
+        var instanceContentUnlock = quest.InstanceContentUnlock.Value;
+        return instanceContentUnlock.ContentFinderCondition.RowId != 0 && instanceContentUnlock.ContentFinderCondition.IsValid;
     }
 
     public static bool UnlocksSomething(Quest quest, HashSet<uint> dutyUnlockQuestIds)
@@ -77,10 +84,10 @@ public static class QuestCategorization
         {
             try
             {
-                if (cfc.UnlockType == 1)
+                if (cfc.UnlockType == 1 && cfc.UnlockCriteria.RowId != 0)
                     ids.Add(cfc.UnlockCriteria.RowId);
 
-                if (cfc.UnlockType2 == 1)
+                if (cfc.UnlockType2 == 1 && cfc.UnlockCriteria2.RowId != 0)
                     ids.Add(cfc.UnlockCriteria2.RowId);
             }
             catch (Exception ex)
