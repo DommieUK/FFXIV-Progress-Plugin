@@ -64,6 +64,8 @@ public sealed class ContentTrackerRegistry
 
             new SideQuestTracker(),
 
+            new QuestIconDiagnosticsTracker(),
+
             new AchievementTracker(),
 
             // Mount sheet has no expansion/patch field (checked MountTransient too - description text
