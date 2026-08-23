@@ -6,15 +6,15 @@ using Lumina.Excel.Sheets;
 namespace FFXIVProgressPlugin.Trackers;
 
 /// <summary>
-/// Tracks every non-Main-Scenario quest that doesn't unlock a job or a duty (see
-/// <see cref="QuestCategorization"/> for exactly what "unlocks" covers and why). This is the largest
-/// quest category by far - expect several thousand items, similar in scale to Achievements.
+/// Tracks every quest that isn't a Main Scenario Quest (see <see cref="QuestCategorization"/> for exactly
+/// what that excludes). This is the largest quest category by far - expect several thousand items,
+/// similar in scale to Achievements.
 /// </summary>
-public sealed class SideQuestTracker : IContentTracker
+public sealed class OtherQuestTracker : IContentTracker
 {
-    public string CategoryId => "SideQuests";
+    public string CategoryId => "OtherQuests";
 
-    public string DisplayName => "Side Quests";
+    public string DisplayName => "Other Quests";
 
     public bool DefaultEnabled => true;
 
@@ -28,8 +28,6 @@ public sealed class SideQuestTracker : IContentTracker
             if (sheet == null)
                 return items;
 
-            var dutyUnlockQuestIds = QuestCategorization.BuildDutyUnlockQuestIds(dataManager, log, CategoryId);
-
             foreach (var quest in sheet)
             {
                 try
@@ -39,9 +37,6 @@ public sealed class SideQuestTracker : IContentTracker
                         continue;
 
                     if (QuestCategorization.IsMainScenarioQuest(quest))
-                        continue;
-
-                    if (QuestCategorization.UnlocksSomething(quest, dutyUnlockQuestIds))
                         continue;
 
                     var expansion = quest.Expansion.IsValid ? quest.Expansion.Value.Name.ExtractText() : string.Empty;
@@ -56,8 +51,6 @@ public sealed class SideQuestTracker : IContentTracker
                     log.Debug(ex, "[{Category}] Skipped a Quest row due to an error", CategoryId);
                 }
             }
-
-            log.Information("[{Category}] Total: {Total}", CategoryId, items.Count);
         }
         catch (Exception ex)
         {
